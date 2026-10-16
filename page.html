@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FactNews — just the facts</title><style>
+body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f5f2;color:#1b1b1b;margin:0}
+header{background:#111;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:20px;margin:0}header small{opacity:.7}
+button,label{font-size:13px}button{background:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer}
+main{max-width:860px;margin:20px auto;padding:0 16px}
+.card{background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;box-shadow:0 1px 3px #0001}
+.card h2{font-size:18px;margin:0 0 6px}.meta{font-size:12px;color:#666;margin-bottom:8px}
+.bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:6px 0 10px;width:220px}
+.L{background:#2b6cb0}.LL{background:#90cdf4}.C{background:#bbb}.LR{background:#feb2b2}.R{background:#c53030}
+ul.f{margin:0 0 8px 0;padding-left:20px}ul.f li{margin:4px 0;font-size:14.5px;line-height:1.4}
+.tag{font-size:11px;padding:1px 6px;border-radius:8px;margin-left:4px;white-space:nowrap}
+.multi{background:#e6f4ea;color:#1e6b34}.single{background:#fff4e0;color:#8a5a00}
+.from-body{background:#e7eefc;color:#1e3a8a}.from-sum{background:#eee;color:#555}
+details{font-size:13px}details a{color:#2b5797}.src{margin:3px 0}
+</style></head><body>
+<header><h1>FactNews</h1><small>Same story, many outlets — only the checkable facts.</small>
+<span style="flex:1"></span><label><input type="checkbox" id="multi" checked> multi-outlet only</label>
+<button id="rf" onclick="load(true)">↻ Refresh</button><small id="upd"></small></header>
+<main id="m">Loading…</main>
+<script>
+const STATIC=/*__DATA__*/null;
+const cls={"Left":"L","Lean Left":"LL","Center":"C","Lean Right":"LR","Right":"R"};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let D=null;
+function render(){const only=document.getElementById('multi').checked;
+ const st=D.stories.filter(s=>!only||s.sources.length>1).slice(0,60);
+ document.getElementById('upd').textContent='Updated '+new Date(D.updated*1000).toLocaleString()+' · '+Object.values(D.feeds).reduce((a,b)=>a+b,0)+' articles';
+ document.getElementById('m').innerHTML=st.map(s=>{const n=s.articles.length;
+  const bar=Object.keys(cls).map(k=>s.leans[k]?`<div class="${cls[k]}" style="flex:${s.leans[k]}" title="${k}: ${s.leans[k]}"></div>`:'').join('');
+  return `<div class="card"><h2>${esc(s.headline)}</h2>
+  <div class="meta">${s.sources.length} outlet(s): ${esc(s.sources.join(', '))}</div><div class="bar">${bar}</div>
+  <ul class="f">${s.facts.map(f=>`<li>${esc(f.text)} ${f.sources.length>1?`<span class="tag multi" title="${esc(f.sources.join(', '))}">✓ ${f.sources.length} sources</span>`:`<span class="tag single">single source: ${esc(f.sources[0])}</span>`} ${f.origin==='body'?'<span class="tag from-body" title="Read from the full article">article body</span>':'<span class="tag from-sum" title="Taken from the RSS headline or description">summary</span>'}</li>`).join('')}</ul>
+  <details><summary>${n} source article(s)</summary>${s.articles.map(a=>`<div class="src"><b>${esc(a.source)}</b> <span style="color:#888">(${a.lean})</span> — <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></div>`).join('')}</details></div>`}).join('')||'No stories.';}
+async function load(force){if(STATIC&&!force){D=STATIC;return render();}
+ const b=document.getElementById('rf');b.disabled=true;b.textContent='Refreshing…';
+ try{D=await (await fetch(force?'/api/refresh':'/api/stories')).json();render();}catch(e){alert('Refresh needs the live server (python3 app.py)');}
+ b.disabled=false;b.textContent='↻ Refresh';}
+document.getElementById('multi').onchange=render;load(false);
+</script></body></html>

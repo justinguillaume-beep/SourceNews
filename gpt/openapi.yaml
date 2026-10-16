@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info: {title: FactNews, version: "1.0.0", description: "Multi-outlet news stories reduced to facts, refreshed every 30 minutes."}
+servers: [{url: "https://justinguillaume-beep.github.io/sourcenews"}]
+paths:
+  /stories.json:
+    get:
+      operationId: getStories
+      summary: Current news stories with fact bullets, source counts, outlets and links
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  story_count: {type: integer}
+                  stories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: integer}
+                        headline: {type: string}
+                        latest_article_at: {type: string, format: date-time}
+                        outlets: {type: array, items: {type: string}}
+                        outlet_count: {type: integer}
+                        facts:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              text: {type: string}
+                              source_count: {type: integer}
+                              sources: {type: array, items: {type: string}}
+                              single_source: {type: boolean}
+                              origin: {type: string, enum: [body, summary], description: "body = read from the article page; summary = RSS headline or description"}
+                        articles:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              outlet: {type: string}
+                              lean: {type: string}
+                              title: {type: string}
+                              url: {type: string}
