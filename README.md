@@ -1,6 +1,6 @@
 # FactNews (SourceNews)
 
-Live: https://justinguillaume-beep.github.io/sourcenews/ · JSON: https://justinguillaume-beep.github.io/sourcenews/stories.json · Text: https://justinguillaume-beep.github.io/sourcenews/stories.txt
+Live: https://justinguillaume-beep.github.io/SourceNews/ · JSON: https://justinguillaume-beep.github.io/SourceNews/stories.json · Text: https://justinguillaume-beep.github.io/SourceNews/stories.txt
 
 Same story from many outlets (left to right), reduced to checkable facts. Rebuilt every 30 min by GitHub Actions and served on GitHub Pages:
 `index.html` (UI), `stories.json` (machine-readable), `stories.txt` (plain text). Local: `pip install -r requirements.txt && python3 app.py 8080`. Export: `python3 app.py --export --out site`.

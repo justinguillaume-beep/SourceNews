@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info: {title: FactNews, version: "1.0.0", description: "Multi-outlet news stories reduced to facts, refreshed every 30 minutes."}
-servers: [{url: "https://justinguillaume-beep.github.io/sourcenews"}]
+servers: [{url: "https://justinguillaume-beep.github.io/SourceNews"}]
 paths:
   /stories.json:
     get:
