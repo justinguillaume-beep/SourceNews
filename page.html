@@ -1,41 +1,107 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FactNews — just the facts</title><style>
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>SourceNews — just the facts</title><style>
 body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f5f2;color:#1b1b1b;margin:0}
-header{background:#111;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header{background:#111;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap}
 header h1{font-size:20px;margin:0}header small{opacity:.7}
-button,label{font-size:13px}button{background:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer}
-main{max-width:860px;margin:20px auto;padding:0 16px}
+button,label,select{font-size:14px}button{background:#fff;border:0;border-radius:6px;padding:8px 12px;cursor:pointer;min-height:36px}
+label{display:inline-flex;align-items:center;gap:6px;min-height:36px}
+input[type=checkbox]{width:18px;height:18px}
+select{min-height:36px;border-radius:6px;border:0;padding:6px 8px}
+main,footer{max-width:860px;margin:20px auto;padding:0 16px}
 .card{background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;box-shadow:0 1px 3px #0001}
-.card h2{font-size:18px;margin:0 0 6px}.meta{font-size:12px;color:#666;margin-bottom:8px}
-.bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:6px 0 10px;width:220px}
-.L{background:#2b6cb0}.LL{background:#90cdf4}.C{background:#bbb}.LR{background:#feb2b2}.R{background:#c53030}
+.card h2{font-size:18px;margin:0 0 6px;line-height:1.3}.meta{font-size:12px;color:#666;margin-bottom:8px}
+.bias-bar{display:flex;height:16px;border-radius:8px;overflow:hidden;width:100%;max-width:480px;background:#eee}
+.seg-l{background:#2b6cb0}.seg-c{background:#b5b5b5}.seg-r{background:#c53030}
+.bias-label{font-size:14px;margin:8px 0;line-height:1.4}
+.nL{color:#1e4e8c;font-weight:650}.nC{color:#444;font-weight:650}.nR{color:#9b2c2c;font-weight:650}
+.blind{display:inline-block;background:#111;color:#fff;border:1px solid #e6b325;border-radius:8px;padding:3px 8px;font-size:12px;font-weight:650;margin:0 0 8px}
 ul.f{margin:0 0 8px 0;padding-left:20px}ul.f li{margin:4px 0;font-size:14.5px;line-height:1.4}
 .tag{font-size:11px;padding:1px 6px;border-radius:8px;margin-left:4px;white-space:nowrap}
 .multi{background:#e6f4ea;color:#1e6b34}.single{background:#fff4e0;color:#8a5a00}
 .from-body{background:#e7eefc;color:#1e3a8a}.from-sum{background:#eee;color:#555}
-details{font-size:13px}details a{color:#2b5797}.src{margin:3px 0}
+details{font-size:13px}details a{color:#2b5797;word-break:break-word}.src{margin:3px 0}
+footer{color:#444;font-size:13px;line-height:1.5;margin-bottom:40px}
+footer h2{font-size:14px;margin:0 0 8px}
+footer .hint{color:#666}
+@media (max-width:700px){
+ header{padding:12px 14px}header h1{font-size:18px}header small{flex-basis:100%}
+ .card{padding:14px}.card h2{font-size:17px}.bias-bar{max-width:none}
+ main,footer{padding:0 12px}
+}
 </style></head><body>
-<header><h1>FactNews</h1><small>Same story, many outlets — only the checkable facts.</small>
-<span style="flex:1"></span><label><input type="checkbox" id="multi" checked> multi-outlet only</label>
+<header><h1>SourceNews</h1><small>Same story, many outlets — only the checkable facts.</small>
+<span style="flex:1"></span>
+<label><input type="checkbox" id="multi" checked> multi-outlet only</label>
+<label><input type="checkbox" id="blind"> blindspots only</label>
+<label>Sort <select id="sort" aria-label="Sort stories"><option value="coverage">most outlets</option><option value="blind">blindspots first</option></select></label>
+<button id="install" hidden>Install app</button>
 <button id="rf" onclick="load(true)">↻ Refresh</button><small id="upd"></small></header>
 <main id="m">Loading…</main>
+<footer id="foot"></footer>
 <script>
 const STATIC=/*__DATA__*/null;
-const cls={"Left":"L","Lean Left":"LL","Center":"C","Lean Right":"LR","Right":"R"};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let D=null;
-function render(){const only=document.getElementById('multi').checked;
- const st=D.stories.filter(s=>!only||s.sources.length>1).slice(0,60);
- document.getElementById('upd').textContent='Updated '+new Date(D.updated*1000).toLocaleString()+' · '+Object.values(D.feeds).reduce((a,b)=>a+b,0)+' articles';
- document.getElementById('m').innerHTML=st.map(s=>{const n=s.articles.length;
-  const bar=Object.keys(cls).map(k=>s.leans[k]?`<div class="${cls[k]}" style="flex:${s.leans[k]}" title="${k}: ${s.leans[k]}"></div>`:'').join('');
+let D=null, deferredPrompt=null;
+function biasOf(s){
+ if(s.bias) return s.bias;
+ return {left:s.left||0,center:s.center||0,right:s.right||0,left_pct:s.left_pct||0,center_pct:s.center_pct||0,right_pct:s.right_pct||0};
+}
+function adapt(s){
+ const bias=biasOf(s);
+ return {headline:s.headline, sources:s.sources||s.outlets||[], bias, blindspot:s.blindspot||null,
+  facts:(s.facts||[]).map(f=>({text:f.text, sources:f.sources||[], origin:f.origin})),
+  articles:(s.articles||[]).map(a=>a.link?a:{source:a.outlet, lean:a.lean, title:a.title, link:a.url})};
+}
+function render(){
+ const only=document.getElementById('multi').checked, blindOnly=document.getElementById('blind').checked, sort=document.getElementById('sort').value;
+ let st=D.stories.map(adapt).filter(s=>(!only||s.sources.length>1)&&(!blindOnly||s.blindspot));
+ if(sort==='blind') st.sort((a,b)=>(b.blindspot?1:0)-(a.blindspot?1:0)||b.sources.length-a.sources.length);
+ st=st.slice(0,60);
+ const when=D.updated?new Date(D.updated*1000).toLocaleString():(D.generated_at||'');
+ const nArt=D.feeds?Object.values(D.feeds).reduce((a,b)=>a+b,0):'';
+ document.getElementById('upd').textContent='Updated '+when+(nArt!==''?' · '+nArt+' articles':'');
+ document.getElementById('m').innerHTML=st.map(s=>{
+  const b=s.bias, n=s.articles.length;
+  const bar=['left','center','right'].map(k=>b[k]?`<div class="seg-${k[0]}" style="flex:${b[k]}"></div>`:'').join('');
+  const label=`<span class="nL">Left ${b.left} (${b.left_pct}%)</span> · <span class="nC">Center ${b.center} (${b.center_pct}%)</span> · <span class="nR">Right ${b.right} (${b.right_pct}%)</span>`;
+  const spot=s.blindspot==='left'?'Blindspot: little Left coverage':s.blindspot==='right'?'Blindspot: little Right coverage':'';
   return `<div class="card"><h2>${esc(s.headline)}</h2>
-  <div class="meta">${s.sources.length} outlet(s): ${esc(s.sources.join(', '))}</div><div class="bar">${bar}</div>
-  <ul class="f">${s.facts.map(f=>`<li>${esc(f.text)} ${f.sources.length>1?`<span class="tag multi" title="${esc(f.sources.join(', '))}">✓ ${f.sources.length} sources</span>`:`<span class="tag single">single source: ${esc(f.sources[0])}</span>`} ${f.origin==='body'?'<span class="tag from-body" title="Read from the full article">article body</span>':'<span class="tag from-sum" title="Taken from the RSS headline or description">summary</span>'}</li>`).join('')}</ul>
-  <details><summary>${n} source article(s)</summary>${s.articles.map(a=>`<div class="src"><b>${esc(a.source)}</b> <span style="color:#888">(${a.lean})</span> — <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></div>`).join('')}</details></div>`}).join('')||'No stories.';}
-async function load(force){if(STATIC&&!force){D=STATIC;return render();}
+  <div class="meta">${s.sources.length} outlet(s): ${esc(s.sources.join(', '))}</div>
+  <div class="bias-bar" role="img" aria-label="Left ${b.left}, Center ${b.center}, Right ${b.right}">${bar}</div>
+  <div class="bias-label">${label}</div>
+  ${spot?`<div class="blind">${esc(spot)}</div>`:''}
+  <ul class="f">${s.facts.map(f=>`<li>${esc(f.text)} ${f.sources.length>1?`<span class="tag multi" title="${esc(f.sources.join(', '))}">✓ ${f.sources.length} sources</span>`:`<span class="tag single">single source: ${esc(f.sources[0]||'')}</span>`} ${f.origin==='body'?'<span class="tag from-body" title="Read from the full article">article body</span>':'<span class="tag from-sum" title="Taken from the RSS headline or description">summary</span>'}</li>`).join('')}</ul>
+  <details><summary>${n} source article(s)</summary>${s.articles.map(a=>`<div class="src"><b>${esc(a.source)}</b> <span style="color:#888">(${esc(a.lean)})</span> — <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></div>`).join('')}</details></div>`;
+ }).join('')||(blindOnly?'No blindspot stories in this refresh.':'No stories.');
+ const order=['Left','Lean Left','Center','Lean Right','Right'];
+ const cat=D.catalog||[];
+ document.getElementById('foot').innerHTML='<h2>Outlets by lean</h2>'+order.map(lean=>{
+  const names=cat.filter(c=>c.lean===lean).map(c=>c.name);
+  return names.length?`<div><b>${esc(lean)}</b> — ${esc(names.join(', '))}</div>`:'';
+ }).join('')+'<p class="hint">Left counts include Lean Left. Right counts include Lean Right. A blindspot means that side has no outlets, or about 20% or less, while the opposite side has at least 3.</p><p class="hint">On a Samsung phone in Chrome, tap Install app when it appears, or open the Chrome menu and choose Install app.</p>';
+}
+async function load(force){
+ if(STATIC&&!force){D=STATIC;render();try{const js=await (await fetch('stories.json')).json();if(js&&js.stories){D=Object.assign({},D,{stories:js.stories,generated_at:js.generated_at});render();}}catch(e){}return;}
  const b=document.getElementById('rf');b.disabled=true;b.textContent='Refreshing…';
  try{D=await (await fetch(force?'/api/refresh':'/api/stories')).json();render();}catch(e){alert('Refresh needs the live server (python3 app.py)');}
- b.disabled=false;b.textContent='↻ Refresh';}
-document.getElementById('multi').onchange=render;load(false);
+ b.disabled=false;b.textContent='↻ Refresh';
+}
+document.getElementById('multi').onchange=render;
+document.getElementById('blind').onchange=render;
+document.getElementById('sort').onchange=render;
+window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;document.getElementById('install').hidden=false;});
+document.getElementById('install').onclick=async()=>{
+ if(!deferredPrompt)return;
+ deferredPrompt.prompt();
+ await deferredPrompt.userChoice;
+ deferredPrompt=null;
+ document.getElementById('install').hidden=true;
+};
+window.addEventListener('appinstalled',()=>{document.getElementById('install').hidden=true;});
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+load(false);
 </script></body></html>

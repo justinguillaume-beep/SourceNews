@@ -34,7 +34,17 @@ FEEDS = {
  "WSJ": ("https://feeds.a.dj.com/rss/RSSWorldNews.xml","Lean Right"),
  "The Hill": ("https://thehill.com/news/feed/","Center"),
  "Daily Caller": ("https://dailycaller.com/feed/","Right"),
+ "HuffPost": ("https://www.huffpost.com/section/politics/feed?x=1","Left"),
+ "MSNBC": ("https://www.msnbc.com/rss","Left"),
+ "Vox": ("https://www.vox.com/rss/index.xml","Left"),
+ "Washington Times": ("https://www.washingtontimes.com/rss/headlines/news/","Lean Right"),
+ "Newsmax": ("https://www.newsmax.com/rss/Newsfront/1/","Right"),
+ "National Review": ("https://www.nationalreview.com/news/feed/","Right"),
+ "Breitbart": ("https://www.breitbart.com/feed/","Right"),
+ "The Federalist": ("https://thefederalist.com/feed/","Right"),
+ "Daily Wire": ("https://www.dailywire.com/feeds/rss.xml","Right"),
 }
+SIDE = {"Left": "left", "Lean Left": "left", "Center": "center", "Lean Right": "right", "Right": "right"}
 # RSS feeds already answer this UA. Article fetches use an identifiable bot UA.
 FEED_UA = {"User-Agent": "Mozilla/5.0 FactNews/0.2 (+https://justinguillaume-beep.github.io/sourcenews)"}
 ARTICLE_UA = {
@@ -325,9 +335,50 @@ def summarize(group, idf):
         return len(keyset(a["title"], idf) & keyset(others, idf)) - 3 * sum(w.lower() in OPINION for w in a["title"].split()) - 0.02 * len(a["title"])
     head = neutralize(max(group, key=hscore)["title"]).rstrip("!")
     head = re.sub(r"^(BREAKING|WATCH|LIVE|EXCLUSIVE)[:\s-]+", "", head, flags=re.I)
+    bias, blind = bias_of(group)
     return dict(headline=head, facts=facts, sources=srcs, leans=Counter(a["lean"] for a in group),
+                bias=bias, blindspot=blind,
                 articles=[dict(source=a["source"], lean=a["lean"], title=a["title"], link=a["link"]) for a in group],
                 ts=max(a["ts"] for a in group))
+
+def bias_of(group):
+    """Count each outlet once. Left includes Lean Left; Right includes Lean Right."""
+    outlets = {}
+    for a in group:
+        outlets.setdefault(a["source"], a["lean"])
+    counts = {"left": 0, "center": 0, "right": 0}
+    for lean in outlets.values():
+        counts[SIDE.get(lean, "center")] += 1
+    total = sum(counts.values())
+    if not total:
+        pct = {"left": 0, "center": 0, "right": 0}
+    else:
+        raw = {k: counts[k] * 100 / total for k in counts}
+        pct = {k: int(raw[k]) for k in counts}
+        remainder = 100 - sum(pct.values())
+        order = sorted(counts, key=lambda k: (raw[k] - pct[k], counts[k]), reverse=True)
+        for i in range(remainder):
+            pct[order[i]] += 1
+    weak = []
+    for side, other in (("left", "right"), ("right", "left")):
+        share = (counts[side] / total) if total else 0
+        if counts[other] >= 3 and (counts[side] == 0 or share <= 0.20):
+            weak.append((share, counts[side], side))
+    blind = None
+    if weak:
+        weak.sort()
+        if not (len(weak) == 2 and weak[0][0] == weak[1][0] and weak[0][1] == weak[1][1]):
+            blind = weak[0][2]
+    bias = {
+        "left": counts["left"], "center": counts["center"], "right": counts["right"],
+        "left_pct": pct["left"], "center_pct": pct["center"], "right_pct": pct["right"],
+    }
+    return bias, blind
+
+def blindspot_label(side):
+    if side == "left": return "Blindspot: little Left coverage"
+    if side == "right": return "Blindspot: little Right coverage"
+    return None
 
 STATE = {"stories": [], "updated": 0, "feeds": {}}
 LOCK = threading.Lock()
@@ -341,8 +392,9 @@ def refresh():
     stories = [summarize(g, idf) for g in groups]
     stories.sort(key=lambda s: (-len(s["sources"]), -s["ts"]))
     n_body = sum(1 for s in stories for f in s["facts"] if f.get("origin") == "body")
+    catalog = [{"name": name, "lean": lean} for name, (_, lean) in FEEDS.items()]
     with LOCK:
-        STATE.update(stories=stories, updated=time.time(), feeds={k: len(v) for k, v in res.items()})
+        STATE.update(stories=stories, updated=time.time(), feeds={k: len(v) for k, v in res.items()}, catalog=catalog)
     print(f"[refresh] {len(arts)} articles, {len(stories)} stories, multi-source: {sum(len(s['sources'])>1 for s in stories)}, body facts: {n_body}, {time.time()-t0:.0f}s", file=sys.stderr)
 
 PAGE = open(__file__.replace("app.py", "page.html")).read()
@@ -360,17 +412,27 @@ def export(out, min_sources=2, limit=40):
     def fact_row(f):
         return {"text": f["text"], "source_count": len(f["sources"]), "sources": f["sources"],
                 "single_source": len(f["sources"]) == 1, "origin": f.get("origin", "summary")}
-    js = {"generated_at": upd, "story_count": len(st), "stories": [
-        {"id": i + 1, "headline": s["headline"], "latest_article_at": iso(s["ts"]), "outlets": s["sources"],
-         "outlet_count": len(s["sources"]),
-         "facts": [fact_row(f) for f in s["facts"]],
-         "articles": [{"outlet": a["source"], "lean": a["lean"], "title": a["title"], "url": a["link"]} for a in s["articles"]]}
-        for i, s in enumerate(st)]}
+    def story_row(i, s):
+        b = s["bias"]
+        return {"id": i + 1, "headline": s["headline"], "latest_article_at": iso(s["ts"]), "outlets": s["sources"],
+                "outlet_count": len(s["sources"]),
+                "left": b["left"], "center": b["center"], "right": b["right"],
+                "left_pct": b["left_pct"], "center_pct": b["center_pct"], "right_pct": b["right_pct"],
+                "blindspot": s.get("blindspot"),
+                "facts": [fact_row(f) for f in s["facts"]],
+                "articles": [{"outlet": a["source"], "lean": a["lean"], "title": a["title"], "url": a["link"]} for a in s["articles"]]}
+    js = {"generated_at": upd, "story_count": len(st), "stories": [story_row(i, s) for i, s in enumerate(st)]}
     open(os.path.join(out, "stories.json"), "w").write(json.dumps(js, indent=1, ensure_ascii=False))
     L = [f"FACTNEWS - just the facts. Generated {upd}. {len(st)} stories covered by 2+ outlets.",
+         "Coverage counts each outlet once: Left includes Lean Left, Right includes Lean Right.",
+         "A blindspot is a side with 0 outlets or 20% or less, while the opposite side has at least 3.",
          "Each fact is marked (article body) when it was read from the full page, or (summary) when it came from the RSS headline or description.", ""]
     for x in js["stories"]:
-        L += [f"## {x['id']}. {x['headline']}", f"Updated: {x['latest_article_at']} | Outlets ({x['outlet_count']}): {', '.join(x['outlets'])}", "Facts:"]
+        spot = blindspot_label(x.get("blindspot")) or "Blindspot: none"
+        L += [f"## {x['id']}. {x['headline']}",
+              f"Updated: {x['latest_article_at']} | Outlets ({x['outlet_count']}): {', '.join(x['outlets'])}",
+              f"Coverage: Left {x['left']} ({x['left_pct']}%) · Center {x['center']} ({x['center_pct']}%) · Right {x['right']} ({x['right_pct']}%)",
+              spot, "Facts:"]
         for f in x["facts"]:
             where = "article body" if f["origin"] == "body" else "summary"
             if f["single_source"]:
@@ -381,6 +443,12 @@ def export(out, min_sources=2, limit=40):
     open(os.path.join(out, "stories.txt"), "w").write("\n".join(L))
     with LOCK: page = PAGE.replace("/*__DATA__*/null", json.dumps(dict(STATE, stories=st)))
     open(os.path.join(out, "index.html"), "w").write(page)
+    import shutil
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ("manifest.webmanifest", "sw.js", "icon-192.png", "icon-512.png"):
+        src, dst = os.path.join(here, name), os.path.join(out, name)
+        if os.path.abspath(src) != os.path.abspath(dst):
+            shutil.copyfile(src, dst)
     n_body = sum(1 for s in js["stories"] for f in s["facts"] if f["origin"] == "body")
     n_sum = sum(1 for s in js["stories"] for f in s["facts"] if f["origin"] != "body")
     print(f"exported {len(st)} stories to {out} ({n_body} article-body facts, {n_sum} summary facts)")

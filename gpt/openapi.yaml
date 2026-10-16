@@ -5,7 +5,7 @@ paths:
   /stories.json:
     get:
       operationId: getStories
-      summary: Current news stories with fact bullets, source counts, outlets and links
+      summary: Current news stories with fact bullets, outlet bias counts, blindspots, and links
       responses:
         "200":
           description: OK
@@ -26,6 +26,17 @@ paths:
                         latest_article_at: {type: string, format: date-time}
                         outlets: {type: array, items: {type: string}}
                         outlet_count: {type: integer}
+                        left: {type: integer, description: "Outlets rated Left or Lean Left. Each outlet counts once."}
+                        center: {type: integer, description: "Outlets rated Center. Each outlet counts once."}
+                        right: {type: integer, description: "Outlets rated Right or Lean Right. Each outlet counts once."}
+                        left_pct: {type: integer, description: "Percent of covering outlets on the left."}
+                        center_pct: {type: integer, description: "Percent of covering outlets in the center."}
+                        right_pct: {type: integer, description: "Percent of covering outlets on the right."}
+                        blindspot:
+                          description: "left or right when that side has 0 outlets or 20% or less and the opposite side has at least 3. null otherwise."
+                          anyOf:
+                            - {type: string, enum: [left, right]}
+                            - {type: "null"}
                         facts:
                           type: array
                           items:
