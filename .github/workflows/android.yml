@@ -1,0 +1,50 @@
+name: Build SourceNews APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+permissions:
+  contents: write
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+      - name: Build signed release APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon -PversionCode=${{ github.run_number }}
+      - name: Collect APK
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' ! -name '*unsigned*' | head -1)
+          test -n "$APK"
+          cp "$APK" SourceNews.apk
+          echo "APK bytes $(stat -c%s SourceNews.apk)"
+      - name: Verify APK
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/aapt" dump badging SourceNews.apk | head -30
+          "$BT/apksigner" verify --verbose --print-certs SourceNews.apk
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Personal-use SourceNews app for Android. It opens the live site full screen, with no browser bar. Installing a newer download over the existing app keeps your place because every build uses the same signing key."
+          if gh release view android --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload android SourceNews.apk --clobber --repo "${{ github.repository }}"
+            gh release edit android --latest --title "SourceNews Android" --notes "$NOTES" --repo "${{ github.repository }}"
+          else
+            gh release create android --latest --title "SourceNews Android" --notes "$NOTES" --repo "${{ github.repository }}" SourceNews.apk
+          fi
